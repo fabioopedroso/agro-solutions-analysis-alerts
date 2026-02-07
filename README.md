@@ -43,19 +43,95 @@ Armazena alertas gerados pelas regras de negócio:
 - Message (Descrição do alerta)
 - CreatedAt / ResolvedAt
 
-## 🚨 Regras de Negócio - Alerta de Seca
+## 🚨 Regras de Negócio Implementadas
 
-**Condições para criar Alerta de Seca:**
+O sistema processa três tipos de sensores e aplica as seguintes regras:
 
-1. Sensor Type = `SoilHumidity`
-2. Valor da leitura < 30%
-3. Verificar se nas **últimas 24 horas** outras leituras do mesmo FieldId também ficaram < 30%
-4. Se todas as leituras estiverem abaixo de 30% (ou for a primeira leitura crítica) → Criar Alert
+### 1. Umidade do Solo (SoilHumidity)
+
+| Condição | Tipo de Alerta | Severidade | Mensagem |
+|----------|----------------|------------|----------|
+| **< 20%** | `DROUGHT_CRITICAL` | 🔴 **Critical** | "PERIGO: Seca severa detectada (X%). Risco de perda da cultura." |
+| **< 30%** | `DROUGHT_WARNING` | 🟠 **High** | "Alerta de Seca: Umidade abaixo do nível ideal (X% < 30%)." |
+| **> 80%** | `SATURATION` | 🟡 **Medium** | "Solo Saturado: Risco de apodrecimento da raiz (X% > 80%)." |
 
 **Comportamento:**
-- Não cria alertas duplicados para o mesmo talhão
+- Seca Crítica tem prioridade (se < 20%, não cria alerta de warning)
+- Verifica alertas ativos do mesmo tipo antes de criar duplicados
+- Logs detalhados em cada verificação
+
+### 2. Temperatura (Temperature)
+
+| Condição | Tipo de Alerta | Severidade | Mensagem |
+|----------|----------------|------------|----------|
+| **< 2°C** | `FROST_RISK` | 🔴 **Critical** | "ALERTA DE GEADA: Temperatura crítica para a planta (X°C < 2°C)." |
+| **> 32°C** | `HEAT_STRESS` | 🟠 **High** | "Estresse Térmico: Calor excessivo detectado (X°C > 32°C)." |
+
+**Comportamento:**
+- Alertas críticos para temperaturas extremas
+- Não cria alertas duplicados
+- Temperatura entre 2°C e 32°C é considerada normal
+
+### 3. Precipitação (Rainfall)
+
+| Condição | Tipo de Alerta | Severidade | Mensagem |
+|----------|----------------|------------|----------|
+| **> 20mm/h** | `HEAVY_RAIN` | 🟡 **Medium** | "Chuva Intensa: Monitorar erosão do solo (Xmm/h > 20mm/h)." |
+
+**Comportamento:**
+- Alerta quando precipitação excede 20mm por hora
+- Indica risco de erosão do solo
+- Não cria alertas duplicados
+
+### Tipos de Alerta (Enum)
+
+```csharp
+public enum AlertType
+{
+    DROUGHT_WARNING,        // Seca - Atenção (< 30%)
+    DROUGHT_CRITICAL,       // Seca Severa (< 20%)
+    SATURATION,            // Solo Saturado (> 80%)
+    FROST_RISK,            // Risco de Geada (< 2°C)
+    HEAT_STRESS,           // Estresse Térmico (> 32°C)
+    HEAVY_RAIN             // Chuva Intensa (> 20mm/h)
+}
+```
+
+### Níveis de Severidade (Enum)
+
+```csharp
+public enum AlertSeverity
+{
+    Low,        // 🟢 Baixa
+    Medium,     // 🟡 Média
+    High,       // 🟠 Alta
+    Critical    // 🔴 Crítica
+}
+```
+
+### Lógica de Prevenção de Duplicados
+
+O sistema **não cria alertas duplicados** do mesmo tipo para o mesmo talhão:
 - Verifica alertas ativos antes de criar um novo
-- Logs detalhados de cada etapa do processamento
+- Compara por `FieldId` + `Type` + `Status = Active`
+- Logs informativos quando detecta duplicatas
+
+### Campos do Alert
+
+```csharp
+public class Alert
+{
+    public int Id { get; set; }
+    public int FieldId { get; set; }
+    public AlertType Type { get; set; }
+    public AlertSeverity Severity { get; set; }    // NOVO
+    public AlertStatus Status { get; set; }
+    public string Message { get; set; }
+    public double TriggerValue { get; set; }        // NOVO - Valor que gerou o alerta
+    public DateTime CreatedAt { get; set; }
+    public DateTime? ResolvedAt { get; set; }
+}
+```
 
 ## ⚙️ Configuração
 
@@ -164,10 +240,10 @@ Exemplo:
 
 ### 1. Publicar Mensagem de Teste na Fila
 
-Use o `agro-solutions-sensor-ingestion` para publicar dados ou publique diretamente no RabbitMQ:
+Use o `agro-solutions-sensor-ingestion` para publicar dados ou publique diretamente no RabbitMQ.
 
-```bash
-# Via sensor-ingestion API
+#### Exemplo 1: Testar Seca Crítica (< 20%)
+```json
 POST https://localhost:7001/api/sensor-data
 Authorization: Bearer {token}
 Content-Type: application/json
@@ -175,28 +251,151 @@ Content-Type: application/json
 {
   "fieldId": 1,
   "sensorType": "SoilHumidity",
-  "value": 25.5,
+  "value": 18.5,
   "timestamp": "2026-02-07T12:00:00Z"
 }
 ```
+**Resultado Esperado:** Alerta `DROUGHT_CRITICAL` com severidade `Critical`
+
+#### Exemplo 2: Testar Alerta de Seca (< 30%)
+```json
+{
+  "fieldId": 2,
+  "sensorType": "SoilHumidity",
+  "value": 25.0,
+  "timestamp": "2026-02-07T12:00:00Z"
+}
+```
+**Resultado Esperado:** Alerta `DROUGHT_WARNING` com severidade `High`
+
+#### Exemplo 3: Testar Solo Saturado (> 80%)
+```json
+{
+  "fieldId": 3,
+  "sensorType": "SoilHumidity",
+  "value": 85.0,
+  "timestamp": "2026-02-07T12:00:00Z"
+}
+```
+**Resultado Esperado:** Alerta `SATURATION` com severidade `Medium`
+
+#### Exemplo 4: Testar Risco de Geada (< 2°C)
+```json
+{
+  "fieldId": 1,
+  "sensorType": "Temperature",
+  "value": 0.5,
+  "timestamp": "2026-02-07T06:00:00Z"
+}
+```
+**Resultado Esperado:** Alerta `FROST_RISK` com severidade `Critical`
+
+#### Exemplo 5: Testar Estresse Térmico (> 32°C)
+```json
+{
+  "fieldId": 2,
+  "sensorType": "Temperature",
+  "value": 35.5,
+  "timestamp": "2026-02-07T14:00:00Z"
+}
+```
+**Resultado Esperado:** Alerta `HEAT_STRESS` com severidade `High`
+
+#### Exemplo 6: Testar Chuva Intensa (> 20mm/h)
+```json
+{
+  "fieldId": 1,
+  "sensorType": "Rainfall",
+  "value": 25.0,
+  "timestamp": "2026-02-07T16:00:00Z"
+}
+```
+**Resultado Esperado:** Alerta `HEAVY_RAIN` com severidade `Medium`
 
 ### 2. Verificar Processamento
 
-- Checar logs do Worker
-- Consultar tabela `SensorReadings` no PostgreSQL
-- Consultar tabela `Alerts` para ver alertas criados
-
-### 3. Verificar Alerta de Seca
-
-Publicar múltiplas leituras com umidade < 30% para o mesmo FieldId:
-
-```json
-{"fieldId": 1, "sensorType": "SoilHumidity", "value": 28.0, "timestamp": "2026-02-07T10:00:00Z"}
-{"fieldId": 1, "sensorType": "SoilHumidity", "value": 25.0, "timestamp": "2026-02-07T11:00:00Z"}
-{"fieldId": 1, "sensorType": "SoilHumidity", "value": 22.0, "timestamp": "2026-02-07T12:00:00Z"}
+**No Worker (Logs):**
+```log
+[Information] Mensagem recebida da fila: {"fieldId":1,"sensorType":"SoilHumidity","value":18.5,...}
+[Information] Processando leitura do sensor: FieldId=1, SensorType=SoilHumidity, Value=18.5
+[Information] Leitura salva com sucesso: Id=1
+[Error] SECA CRÍTICA detectada! FieldId=1, Umidade=18.5%
+[Warning] Alerta criado: Type=DROUGHT_CRITICAL, Severity=Critical, FieldId=1, AlertId=1
+[Information] Mensagem processada e confirmada (ACK)
 ```
 
-Resultado esperado: 1 alerta criado na tabela `Alerts`
+**No PostgreSQL:**
+```sql
+-- Verificar leituras processadas
+SELECT * FROM "SensorReadings" ORDER BY "ProcessedAt" DESC LIMIT 10;
+
+-- Verificar alertas gerados
+SELECT 
+    "Id",
+    "FieldId",
+    "Type",
+    "Severity",
+    "Status",
+    "TriggerValue",
+    "Message",
+    "CreatedAt"
+FROM "Alerts" 
+WHERE "Status" = 'Active'
+ORDER BY "Severity" DESC, "CreatedAt" DESC;
+
+-- Contar alertas por tipo
+SELECT 
+    "Type",
+    "Severity",
+    COUNT(*) as Total
+FROM "Alerts"
+WHERE "Status" = 'Active'
+GROUP BY "Type", "Severity"
+ORDER BY Total DESC;
+```
+
+### 3. Testar Prevenção de Duplicados
+
+Publicar a mesma mensagem duas vezes:
+```json
+// Primeira mensagem
+{"fieldId": 1, "sensorType": "SoilHumidity", "value": 18.5, "timestamp": "2026-02-07T12:00:00Z"}
+
+// Segunda mensagem (mesmo FieldId e valor crítico)
+{"fieldId": 1, "sensorType": "SoilHumidity", "value": 19.0, "timestamp": "2026-02-07T12:05:00Z"}
+```
+
+**Resultado Esperado:**
+- 1º Alerta criado com sucesso
+- 2º Log: "Alerta DROUGHT_CRITICAL já existe para FieldId=1, não criando duplicado"
+
+### 4. Cenário de Teste Completo
+
+**Simular um dia de monitoramento:**
+
+```json
+// 06:00 - Madrugada fria - GEADA
+{"fieldId": 1, "sensorType": "Temperature", "value": 1.0, "timestamp": "2026-02-07T06:00:00Z"}
+
+// 08:00 - Solo seco após a noite
+{"fieldId": 1, "sensorType": "SoilHumidity", "value": 22.0, "timestamp": "2026-02-07T08:00:00Z"}
+
+// 14:00 - Calor intenso - ESTRESSE TÉRMICO
+{"fieldId": 1, "sensorType": "Temperature", "value": 36.0, "timestamp": "2026-02-07T14:00:00Z"}
+
+// 16:00 - Tempestade - CHUVA INTENSA
+{"fieldId": 1, "sensorType": "Rainfall", "value": 28.0, "timestamp": "2026-02-07T16:00:00Z"}
+
+// 17:00 - Solo encharcado após chuva - SATURAÇÃO
+{"fieldId": 1, "sensorType": "SoilHumidity", "value": 85.0, "timestamp": "2026-02-07T17:00:00Z"}
+```
+
+**Resultado Esperado:** 5 alertas criados para o Field ID 1:
+- `FROST_RISK` (Critical)
+- `DROUGHT_CRITICAL` (Critical)
+- `HEAT_STRESS` (High)
+- `HEAVY_RAIN` (Medium)
+- `SATURATION` (Medium)
 
 ## 🔧 Tecnologias
 

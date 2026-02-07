@@ -24,6 +24,11 @@ public class AlertConfiguration : IEntityTypeConfiguration<Alert>
             .HasConversion<string>()
             .HasMaxLength(50);
 
+        builder.Property(a => a.Severity)
+            .IsRequired()
+            .HasConversion<string>()
+            .HasMaxLength(50);
+
         builder.Property(a => a.Status)
             .IsRequired()
             .HasConversion<string>()
@@ -33,6 +38,10 @@ public class AlertConfiguration : IEntityTypeConfiguration<Alert>
             .IsRequired()
             .HasMaxLength(500);
 
+        builder.Property(a => a.TriggerValue)
+            .IsRequired()
+            .HasPrecision(10, 2);
+
         builder.Property(a => a.CreatedAt)
             .IsRequired();
 
@@ -41,5 +50,6 @@ public class AlertConfiguration : IEntityTypeConfiguration<Alert>
 
         builder.HasIndex(a => a.FieldId);
         builder.HasIndex(a => new { a.FieldId, a.Status });
+        builder.HasIndex(a => new { a.Type, a.Severity });
     }
 }

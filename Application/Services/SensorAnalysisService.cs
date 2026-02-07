@@ -29,75 +29,195 @@ public class SensorAnalysisService : ISensorAnalysisService
             "Processando leitura do sensor: FieldId={FieldId}, SensorType={SensorType}, Value={Value}",
             sensorData.FieldId, sensorData.SensorType, sensorData.Value);
 
-        // 1. Mapear e salvar a leitura no banco
         var reading = MapToEntity(sensorData);
         await _sensorReadingRepository.AddAsync(reading);
         await _sensorReadingRepository.SaveChangesAsync();
 
         _logger.LogInformation("Leitura salva com sucesso: Id={Id}", reading.Id);
 
-        // 2. Aplicar regra de Alerta de Seca
-        if (sensorData.SensorType.Equals("SoilHumidity", StringComparison.OrdinalIgnoreCase) 
-            && sensorData.Value < 30)
-        {
-            _logger.LogInformation(
-                "Umidade do solo crítica detectada: FieldId={FieldId}, Value={Value}%",
-                sensorData.FieldId, sensorData.Value);
+        await ApplyBusinessRulesAsync(sensorData);
+    }
 
-            await CheckAndCreateDroughtAlertAsync(sensorData.FieldId);
+    private async Task ApplyBusinessRulesAsync(SensorDataDto sensorData)
+    {
+        var sensorType = sensorData.SensorType.ToLower();
+
+        switch (sensorType)
+        {
+            case "soilhumidity":
+                await ProcessSoilHumidityRulesAsync(sensorData);
+                break;
+
+            case "temperature":
+                await ProcessTemperatureRulesAsync(sensorData);
+                break;
+
+            case "rainfall":
+                await ProcessRainfallRulesAsync(sensorData);
+                break;
+
+            default:
+                _logger.LogWarning(
+                    "Tipo de sensor não reconhecido para regras de negócio: {SensorType}",
+                    sensorData.SensorType);
+                break;
         }
     }
 
-    private async Task CheckAndCreateDroughtAlertAsync(int fieldId)
+    #region Soil Humidity Rules
+
+    private async Task ProcessSoilHumidityRulesAsync(SensorDataDto sensorData)
     {
-        // Buscar leituras de SoilHumidity das últimas 24 horas
-        var last24HoursReadings = await _sensorReadingRepository
-            .GetLast24HoursByFieldAsync(fieldId, SensorType.SoilHumidity);
+        var value = sensorData.Value;
 
-        var readingsList = last24HoursReadings.ToList();
+        if (value < 20)
+        {
+            _logger.LogError(
+                "SECA CRÍTICA detectada! FieldId={FieldId}, Umidade={Value}%",
+                sensorData.FieldId, value);
 
-        // Verificar se todas as leituras estão abaixo de 30% ou se é a primeira leitura crítica
-        var allBelowThreshold = readingsList.Any() && readingsList.All(r => r.Value < 30);
-        var isFirstCriticalReading = !readingsList.Any();
-
-        if (allBelowThreshold || isFirstCriticalReading)
+            await CreateAlertIfNotExistsAsync(
+                fieldId: sensorData.FieldId,
+                type: AlertType.DROUGHT_CRITICAL,
+                severity: AlertSeverity.Critical,
+                message: $"PERIGO: Seca severa detectada ({value:F1}%). Risco de perda da cultura.",
+                triggerValue: value);
+        }
+        else if (value < 30)
         {
             _logger.LogWarning(
-                "Condição de Alerta de Seca detectada para FieldId={FieldId}. " +
-                "Leituras nas últimas 24h: {Count}, Todas abaixo de 30%: {AllBelow}",
-                fieldId, readingsList.Count, allBelowThreshold);
+                "Alerta de Seca detectado! FieldId={FieldId}, Umidade={Value}%",
+                sensorData.FieldId, value);
 
-            // Verificar se já não existe um alerta ativo para este talhão
-            var activeAlerts = await _alertRepository.GetActiveAlertsByFieldAsync(fieldId);
-            
-            if (!activeAlerts.Any())
-            {
-                await CreateDroughtAlertAsync(fieldId);
-            }
-            else
-            {
-                _logger.LogInformation(
-                    "Alerta de seca já existe para FieldId={FieldId}, não criando duplicado",
-                    fieldId);
-            }
+            await CreateAlertIfNotExistsAsync(
+                fieldId: sensorData.FieldId,
+                type: AlertType.DROUGHT_WARNING,
+                severity: AlertSeverity.High,
+                message: $"Alerta de Seca: Umidade abaixo do nível ideal ({value:F1}% < 30%).",
+                triggerValue: value);
+        }
+        else if (value > 80)
+        {
+            _logger.LogWarning(
+                "Solo Saturado detectado! FieldId={FieldId}, Umidade={Value}%",
+                sensorData.FieldId, value);
+
+            await CreateAlertIfNotExistsAsync(
+                fieldId: sensorData.FieldId,
+                type: AlertType.SATURATION,
+                severity: AlertSeverity.Medium,
+                message: $"Solo Saturado: Risco de apodrecimento da raiz ({value:F1}% > 80%).",
+                triggerValue: value);
         }
         else
         {
             _logger.LogInformation(
-                "Condição de Alerta de Seca não atendida para FieldId={FieldId}. " +
-                "Leituras nas últimas 24h acima do limite.",
-                fieldId);
+                "Umidade do solo em níveis normais: FieldId={FieldId}, Umidade={Value}%",
+                sensorData.FieldId, value);
         }
     }
 
-    private async Task CreateDroughtAlertAsync(int fieldId)
+    #endregion
+
+    #region Temperature Rules
+
+    private async Task ProcessTemperatureRulesAsync(SensorDataDto sensorData)
     {
+        var value = sensorData.Value;
+
+        if (value < 2)
+        {
+            _logger.LogError(
+                "RISCO DE GEADA detectado! FieldId={FieldId}, Temperatura={Value}°C",
+                sensorData.FieldId, value);
+
+            await CreateAlertIfNotExistsAsync(
+                fieldId: sensorData.FieldId,
+                type: AlertType.FROST_RISK,
+                severity: AlertSeverity.Critical,
+                message: $"ALERTA DE GEADA: Temperatura crítica para a planta ({value:F1}°C < 2°C).",
+                triggerValue: value);
+        }
+        else if (value > 32)
+        {
+            _logger.LogWarning(
+                "Estresse Térmico detectado! FieldId={FieldId}, Temperatura={Value}°C",
+                sensorData.FieldId, value);
+
+            await CreateAlertIfNotExistsAsync(
+                fieldId: sensorData.FieldId,
+                type: AlertType.HEAT_STRESS,
+                severity: AlertSeverity.High,
+                message: $"Estresse Térmico: Calor excessivo detectado ({value:F1}°C > 32°C).",
+                triggerValue: value);
+        }
+        else
+        {
+            _logger.LogInformation(
+                "Temperatura em níveis normais: FieldId={FieldId}, Temperatura={Value}°C",
+                sensorData.FieldId, value);
+        }
+    }
+
+    #endregion
+
+    #region Rainfall Rules
+
+    private async Task ProcessRainfallRulesAsync(SensorDataDto sensorData)
+    {
+        var value = sensorData.Value;
+
+        if (value > 20)
+        {
+            _logger.LogWarning(
+                "Chuva Intensa detectada! FieldId={FieldId}, Precipitação={Value}mm/h",
+                sensorData.FieldId, value);
+
+            await CreateAlertIfNotExistsAsync(
+                fieldId: sensorData.FieldId,
+                type: AlertType.HEAVY_RAIN,
+                severity: AlertSeverity.Medium,
+                message: $"Chuva Intensa: Monitorar erosão do solo ({value:F1}mm/h > 20mm/h).",
+                triggerValue: value);
+        }
+        else
+        {
+            _logger.LogInformation(
+                "Precipitação em níveis normais: FieldId={FieldId}, Precipitação={Value}mm/h",
+                sensorData.FieldId, value);
+        }
+    }
+
+    #endregion
+
+    #region Alert Creation
+
+    private async Task CreateAlertIfNotExistsAsync(
+        int fieldId,
+        AlertType type,
+        AlertSeverity severity,
+        string message,
+        double triggerValue)
+    {
+        var activeAlerts = await _alertRepository.GetActiveAlertsByFieldAsync(fieldId);
+        var existingAlert = activeAlerts.FirstOrDefault(a => a.Type == type);
+
+        if (existingAlert != null)
+        {
+            _logger.LogInformation(
+                "Alerta {AlertType} já existe para FieldId={FieldId}, não criando duplicado. AlertId={AlertId}",
+                type, fieldId, existingAlert.Id);
+            return;
+        }
+
         var alert = new Alert
         {
             FieldId = fieldId,
-            Type = AlertType.DroughtAlert,
+            Type = type,
+            Severity = severity,
             Status = AlertStatus.Active,
-            Message = $"Alerta de Seca: Umidade do solo abaixo de 30% nas últimas 24 horas no Talhão {fieldId}",
+            Message = message,
+            TriggerValue = triggerValue,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -105,13 +225,16 @@ public class SensorAnalysisService : ISensorAnalysisService
         await _alertRepository.SaveChangesAsync();
 
         _logger.LogWarning(
-            "Alerta de Seca criado: AlertId={AlertId}, FieldId={FieldId}",
-            alert.Id, fieldId);
+            "Alerta criado: Type={Type}, Severity={Severity}, FieldId={FieldId}, AlertId={AlertId}",
+            type, severity, fieldId, alert.Id);
     }
+
+    #endregion
+
+    #region Mapping
 
     private SensorReading MapToEntity(SensorDataDto dto)
     {
-        // Mapear string para enum
         if (!Enum.TryParse<SensorType>(dto.SensorType, true, out var sensorType))
         {
             _logger.LogWarning(
@@ -129,4 +252,6 @@ public class SensorAnalysisService : ISensorAnalysisService
             ProcessedAt = DateTime.UtcNow
         };
     }
+
+    #endregion
 }
