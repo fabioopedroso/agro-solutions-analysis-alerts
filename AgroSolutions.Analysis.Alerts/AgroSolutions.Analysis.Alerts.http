@@ -1,0 +1,6 @@
+@AgroSolutions.Analysis.Alerts_HostAddress = http://localhost:5243
+
+GET {{AgroSolutions.Analysis.Alerts_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
