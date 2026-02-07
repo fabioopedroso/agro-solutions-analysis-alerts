@@ -7,6 +7,9 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/main/Dotnet.gitignore
 
+# Visual Studio folder
+.vs/
+
 # Build results
 [Dd]ebug/
 [Dd]ebugPublic/
@@ -52,4 +55,3 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
-/AgroSolutions.Analysis.Alerts/.vs/AgroSolutions.Analysis.Alerts.slnx
