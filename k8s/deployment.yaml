@@ -32,11 +32,21 @@ spec:
         - configMapRef:
             name: analysis-alerts-config
         env:
-        - name: ConnectionStrings__DefaultConnection
+        - name: ConnectionStrings__ConnectionString
           valueFrom:
             secretKeyRef:
               name: agrosolutions-secrets
-              key: supabase-analysis-connection
+              key: supabase-connection-string
+        - name: RabbitMQ__Username
+          valueFrom:
+            secretKeyRef:
+              name: agrosolutions-secrets
+              key: rabbitmq-user
+        - name: RabbitMQ__Password
+          valueFrom:
+            secretKeyRef:
+              name: agrosolutions-secrets
+              key: rabbitmq-password
         resources:
           requests:
             memory: "128Mi"

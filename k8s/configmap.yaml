@@ -8,8 +8,6 @@ metadata:
     component: worker
 data:
   DOTNET_ENVIRONMENT: "Production"
-  RabbitMQ__Host: "rabbitmq"
+  RabbitMQ__Host: "rabbitmq.agrosolutions.svc.cluster.local"
   RabbitMQ__Port: "5672"
-  RabbitMQ__Username: "guest"
-  RabbitMQ__Password: "guest"
   RabbitMQ__QueueName: "sensor-data-queue"
