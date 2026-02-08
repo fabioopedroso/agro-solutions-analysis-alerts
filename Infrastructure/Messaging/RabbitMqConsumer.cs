@@ -61,13 +61,11 @@ public class RabbitMqConsumer : BackgroundService
 
                 if (sensorData != null)
                 {
-                    // Criar um scope para resolver serviços com escopo (scoped)
                     using var scope = _serviceProvider.CreateScope();
                     var sensorAnalysisService = scope.ServiceProvider.GetRequiredService<ISensorAnalysisService>();
 
                     await sensorAnalysisService.ProcessSensorReadingAsync(sensorData);
 
-                    // ACK da mensagem após processamento bem-sucedido
                     _channel?.BasicAck(deliveryTag: ea.DeliveryTag, multiple: false);
                     _logger.LogInformation("Mensagem processada e confirmada (ACK)");
                 }
@@ -80,14 +78,12 @@ public class RabbitMqConsumer : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Erro ao processar mensagem da fila");
-                // NACK da mensagem em caso de erro (não recolocar na fila para evitar loop infinito)
-                _channel?.BasicNack(deliveryTag: ea.DeliveryTag, multiple: false, requeue: false);
+                _channel?.BasicNack(deliveryTag: ea.DeliveryTag, multiple: false, requeue: true);
             }
         };
 
         _channel?.BasicConsume(queue: _settings.QueueName, autoAck: false, consumer: consumer);
 
-        // Manter o serviço rodando
         while (!stoppingToken.IsCancellationRequested)
         {
             await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);

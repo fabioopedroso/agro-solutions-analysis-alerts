@@ -2,7 +2,8 @@ using Infrastructure;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-// Adicionar Infrastructure (DbContext, Repositories, Services, RabbitMQ Consumer)
+builder.Configuration.AddEnvironmentVariables();
+
 builder.Services.AddInfrastructure(builder.Configuration);
 
 var host = builder.Build();
