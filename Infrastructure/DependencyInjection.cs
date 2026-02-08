@@ -16,7 +16,7 @@ public static class DependencyInjection
     {
         // Database
         services.AddDbContext<ApplicationDbContext>(options =>
-            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
+            options.UseNpgsql(configuration.GetConnectionString("ConnectionString")));
 
         // Repositories
         services.AddScoped<ISensorReadingRepository, SensorReadingRepository>();
