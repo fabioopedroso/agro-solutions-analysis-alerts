@@ -30,10 +30,10 @@ jobs:
           ${{ runner.os }}-nuget-
           
     - name: Restore dependencies
-      run: dotnet restore
+      run: dotnet restore AgroSolutions.Analysis.Alerts/AgroSolutions.Analysis.Alerts.sln
       
     - name: Build solution
-      run: dotnet build --no-restore --configuration Release
+      run: dotnet build AgroSolutions.Analysis.Alerts/AgroSolutions.Analysis.Alerts.sln --no-restore --configuration Release
       
     - name: Publish application
       run: dotnet publish AgroSolutions.Analysis.Alerts/AgroSolutions.Analysis.Alerts.csproj --no-build --configuration Release --output ./publish
