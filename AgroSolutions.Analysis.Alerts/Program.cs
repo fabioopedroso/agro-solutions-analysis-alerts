@@ -1,4 +1,5 @@
 using Infrastructure;
+using Npgsql;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -44,7 +45,8 @@ builder.Services.AddOpenTelemetry()
                 {
                     activity.SetTag("db.statement", command.CommandText);
                 };
-            });
+            })
+            .AddNpgsql();
 
         if (!string.IsNullOrWhiteSpace(otlpEndpoint))
         {
