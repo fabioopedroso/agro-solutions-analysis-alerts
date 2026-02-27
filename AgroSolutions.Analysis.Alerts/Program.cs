@@ -1,25 +1,79 @@
-var builder = WebApplication.CreateBuilder(args);
+using Infrastructure;
+using Npgsql;
+using OpenTelemetry.Logs;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
-// Add services to the container.
+var builder = Host.CreateApplicationBuilder(args);
 
-builder.Services.AddControllers();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Configuration.AddEnvironmentVariables();
 
-var app = builder.Build();
+var serviceName = builder.Configuration["Observability:ServiceName"] ?? "AgroSolutions.Analysis.Alerts";
+var otlpEndpoint = builder.Configuration["Observability:OtlpEndpoint"];
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+var resourceBuilder = ResourceBuilder.CreateDefault()
+    .AddService(serviceName)
+    .AddTelemetrySdk()
+    .AddEnvironmentVariableDetector();
+
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.AddOpenTelemetry(logging =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+    logging.IncludeFormattedMessage = true;
+    logging.IncludeScopes = true;
+    logging.SetResourceBuilder(resourceBuilder);
 
-app.UseHttpsRedirection();
+    if (!string.IsNullOrWhiteSpace(otlpEndpoint))
+    {
+        logging.AddOtlpExporter(options =>
+        {
+            options.Endpoint = new Uri(otlpEndpoint);
+        });
+    }
+});
 
-app.UseAuthorization();
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing =>
+    {
+        tracing.SetResourceBuilder(resourceBuilder)
+            .AddHttpClientInstrumentation()
+            .AddEntityFrameworkCoreInstrumentation(options =>
+            {
+                options.EnrichWithIDbCommand = (activity, command) =>
+                {
+                    activity.SetTag("db.statement", command.CommandText);
+                };
+            })
+            .AddNpgsql();
 
-app.MapControllers();
+        if (!string.IsNullOrWhiteSpace(otlpEndpoint))
+        {
+            tracing.AddOtlpExporter(options =>
+            {
+                options.Endpoint = new Uri(otlpEndpoint);
+            });
+        }
+    })
+    .WithMetrics(metrics =>
+    {
+        metrics.SetResourceBuilder(resourceBuilder)
+            .AddRuntimeInstrumentation()
+            .AddProcessInstrumentation()
+            .AddHttpClientInstrumentation()
+            .AddMeter("Npgsql");
 
-app.Run();
+        if (!string.IsNullOrWhiteSpace(otlpEndpoint))
+        {
+            metrics.AddOtlpExporter(options =>
+            {
+                options.Endpoint = new Uri(otlpEndpoint);
+            });
+        }
+    });
+
+builder.Services.AddInfrastructure(builder.Configuration);
+
+var host = builder.Build();
+host.Run();

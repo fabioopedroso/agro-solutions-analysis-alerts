@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analysis-alerts
+  namespace: agrosolutions
+  labels:
+    app: analysis-alerts
+    component: worker
+    version: v1
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: analysis-alerts
+  template:
+    metadata:
+      labels:
+        app: analysis-alerts
+        component: worker
+        version: v1
+    spec:
+      containers:
+      - name: analysis-alerts
+        image: fabioopedroso/agro-analysis-alerts:v2
+        imagePullPolicy: Always
+        envFrom:
+        - configMapRef:
+            name: analysis-alerts-config
+        env:
+        - name: ConnectionStrings__ConnectionString
+          valueFrom:
+            secretKeyRef:
+              name: agrosolutions-secrets
+              key: supabase-connection-string
+        - name: RabbitMQ__Username
+          valueFrom:
+            secretKeyRef:
+              name: agrosolutions-secrets
+              key: rabbitmq-user
+        - name: RabbitMQ__Password
+          valueFrom:
+            secretKeyRef:
+              name: agrosolutions-secrets
+              key: rabbitmq-password
+        - name: Observability__OtlpEndpoint
+          value: "http://otel-collector:4317"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false

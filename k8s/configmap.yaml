@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: analysis-alerts-config
+  namespace: agrosolutions
+  labels:
+    app: analysis-alerts
+    component: worker
+data:
+  DOTNET_ENVIRONMENT: "Production"
+  RabbitMQ__Host: "rabbitmq.agrosolutions.svc.cluster.local"
+  RabbitMQ__Port: "5672"
+  RabbitMQ__QueueName: "sensor-data-queue"

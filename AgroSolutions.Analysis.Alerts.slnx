@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="Domain\Domain.csproj" />
+  <Project Path="Application\Application.csproj" />
+  <Project Path="Infrastructure\Infrastructure.csproj" />
+  <Project Path="AgroSolutions.Analysis.Alerts\AgroSolutions.Analysis.Alerts.csproj" />
+</Solution>

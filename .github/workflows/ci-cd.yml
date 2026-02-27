@@ -1,0 +1,79 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+  pull_request:
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  IMAGE_NAME: fabioopedroso/agro-analysis-alerts
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+        
+    - name: Cache NuGet packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+          
+    - name: Restore dependencies
+      run: dotnet restore AgroSolutions.Analysis.Alerts/AgroSolutions.Analysis.Alerts.sln
+      
+    - name: Build solution
+      run: dotnet build AgroSolutions.Analysis.Alerts/AgroSolutions.Analysis.Alerts.sln --no-restore --configuration Release
+      
+    - name: Publish application
+      run: dotnet publish AgroSolutions.Analysis.Alerts/AgroSolutions.Analysis.Alerts.csproj --no-build --configuration Release --output ./publish
+
+  docker:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        registry: docker.io
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+        
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=sha,prefix={{branch}}-
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max

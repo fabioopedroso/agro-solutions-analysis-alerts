@@ -1,0 +1,26 @@
+# Pastas de build e cache
+**/bin/
+**/obj/
+**/.vs/
+**/.vscode/
+
+# Arquivos do usuário
+**/*.user
+**/*.suo
+
+# NuGet
+**/.nuget/
+**/packages/
+
+# Arquivos temporários
+**/*.log
+**/.DS_Store
+**/Thumbs.db
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# README e documentação (opcional, se não quiser incluir na imagem)
+README.md
