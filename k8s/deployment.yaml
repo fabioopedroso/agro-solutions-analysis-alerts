@@ -26,7 +26,7 @@ spec:
     spec:
       containers:
       - name: analysis-alerts
-        image: fabioopedroso/agro-analysis-alerts:v2
+        image: fabioopedroso/agro-analysis-alerts:latest
         imagePullPolicy: Always
         envFrom:
         - configMapRef:
